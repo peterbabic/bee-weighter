@@ -13,9 +13,9 @@
 
 SoftwareWire myWire(SDA, SCL);
 RtcDS1307<SoftwareWire> Rtc(myWire);
-/* for software wire use above */
+for software wire use above
 
-/* for normal hardware wire use below */
+for normal hardware wire use below */
 #include <Wire.h> // must be included here so that Arduino library object file references work
 #include <RtcDS3231.h>
 #include <EepromAT24C32.h>
