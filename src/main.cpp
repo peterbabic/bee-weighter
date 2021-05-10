@@ -1,138 +1,252 @@
-/**
- *
- * HX711 library for Arduino - example file
- * https://github.com/bogde/HX711
- *
- * MIT License
- * (c) 2018 Bogdan Necula
- *
- **/
+#include <Arduino.h>
+#include <avr/sleep.h>
 
-#include "HX711.h"
+// const byte wakeUpPin = 7;
+const byte ledPin = 17;
+const byte RtcSquareWavePin = 7;
+// const byte RtcSquareWaveInterrupt = digitalPinToInterrupt(RtcSquareWavePin);
+const byte RtcSquareWaveInterrupt = digitalPinToInterrupt(RtcSquareWavePin);
 
-
-// HX711 circuit wiring
-const int LOADCELL_DOUT_PIN = 21;
-const int LOADCELL_SCK_PIN = 20;
-
-
-HX711 scale;
-
-void setup() {
-  Serial.begin(38400);
-  Serial.println("HX711 Demo");
-
-  Serial.println("Initializing the scale");
-
-  // Initialize library with data output pin, clock input pin and gain factor.
-  // Channel selection is made by passing the appropriate gain:
-  // - With a gain factor of 64 or 128, channel A is selected
-  // - With a gain factor of 32, channel B is selected
-  // By omitting the gain factor parameter, the library
-  // default "128" (Channel A) is used here.
-  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-
-  Serial.println("Before setting up the scale:");
-  Serial.print("read: \t\t");
-  Serial.println(scale.read());			// print a raw reading from the ADC
-
-  Serial.print("read average: \t\t");
-  Serial.println(scale.read_average(20));  	// print the average of 20 readings from the ADC
-
-  Serial.print("get value: \t\t");
-  Serial.println(scale.get_value(5));		// print the average of 5 readings from the ADC minus the tare weight (not set yet)
-
-  Serial.print("get units: \t\t");
-  Serial.println(scale.get_units(5), 1);	// print the average of 5 readings from the ADC minus tare weight (not set) divided
-						// by the SCALE parameter (not set yet)
-
-  scale.set_scale(1000.f);                      // this value is obtained by calibrating the scale with known weights; see the README for details
-  scale.tare();				        // reset the scale to 0
-
-  Serial.println("After setting up the scale:");
-
-  Serial.print("read: \t\t");
-  Serial.println(scale.read());                 // print a raw reading from the ADC
-
-  Serial.print("read average: \t\t");
-  Serial.println(scale.read_average(20));       // print the average of 20 readings from the ADC
-
-  Serial.print("get value: \t\t");
-  Serial.println(scale.get_value(5));		// print the average of 5 readings from the ADC minus the tare weight, set with tare()
-
-  Serial.print("get units: \t\t");
-  Serial.println(scale.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
-						// by the SCALE parameter set with set_scale
-
-  Serial.println("Readings:");
+void wake()
+{
+    sleep_disable();
+    detachInterrupt(RtcSquareWaveInterrupt);
 }
 
-void loop() {
-  Serial.print("one reading:\t");
-  Serial.print(scale.get_units(), 1);
-  Serial.print("\t| average:\t");
-  Serial.println(scale.get_units(10), 1);
-
-  scale.power_down();			        // put the ADC in sleep mode
-  delay(1000);
-  scale.power_up();
+void sleepNow()
+{
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+    noInterrupts();
+    sleep_enable();
+    attachInterrupt(RtcSquareWaveInterrupt, wake, LOW);
+    interrupts();
+    sleep_cpu();
 }
 
+// CONNECTIONS:
+// DS3231 SDA --> SDA
+// DS3231 SCL --> SCL
+// DS3231 VCC --> 3.3v or 5v
+// DS3231 GND --> GND
+// SQW --->  (Pin19) Don't forget to pullup (4.7k to 10k to VCC)
 
-
-/* #include <Arduino.h>
-#include <HX711.h>
+/* for software wire use below
+#include <SoftwareWire.h>  // must be included here so that Arduino library object file references work
 #include <RtcDS3231.h>
 
+SoftwareWire myWire(SDA, SCL);
+RtcDS3231<SoftwareWire> Rtc(myWire);
+ for software wire use above */
 
+/* for normal hardware wire use below */
+#include <Wire.h> // must be included here so that Arduino library object file references work
+#include <RtcDS3231.h>
+RtcDS3231<TwoWire> Rtc(Wire);
+/* for normal hardware wire use above */
 
-int RXLED = 17; // The RX LED has a defined Arduino pin
-                // Note: The TX LED was not so lucky, we'll need to use pre-defined
-                // macros (TXLED1, TXLED0) to control that.
-                // (We could use the same macros for the RX LED too -- RXLED1,
-                //  and RXLED0.)
+bool Alarmed();
+void printDateTime(const RtcDateTime &dt);
+const byte LED = 17;
 
-// 1. HX711 circuit wiring
-const int LOADCELL_DOUT_PIN = 21;
-const int LOADCELL_SCK_PIN = 20;
+// Interrupt Pin Lookup Table
+// (copied from Arduino Docs)
+//
+// CAUTION:  The interrupts are Arduino numbers NOT Atmel numbers
+//   and may not match (example, Mega2560 int.4 is actually Atmel Int2)
+//   this is only an issue if you plan to use the lower level interupt features
+//
+// Board           int.0    int.1   int.2   int.3   int.4   int.5
+// ---------------------------------------------------------------
+// Uno, Ethernet    2       3
+// Mega2560         2       3       21      20     [19]      18
+// Leonardo         3       2       0       1       7
 
-// 2. Adjustment settings
-const long LOADCELL_OFFSET = 50682624;
-const long LOADCELL_DIVIDER = 5895655;
+// #define RtcSquareWavePin 7 // Mega2560
+// #define RtcSquareWaveInterrupt 4 // Mega2560
 
-HX711 loadcell;
+// marked volatile so interrupt can safely modify them and
+// other code can safely read and modify them
+volatile uint16_t interuptCount = 0;
+volatile bool interuptFlag = false;
+
+void ISR_ATTR InteruptServiceRoutine()
+{
+    // since this interupted any other running code,
+    // don't do anything that takes long and especially avoid
+    // any communications calls within this routine
+    interuptCount++;
+    interuptFlag = true;
+}
 
 void setup()
 {
-  pinMode(RXLED, OUTPUT); // Set RX LED as an output
-  // TX LED is set as an output behind the scenes
+    Serial.begin(9600);
 
-  Serial.begin(9600); //This pipes to the serial monitor
-  Serial.println("Initialize Serial Monitor");
+    // set the interupt pin to input mode
+    pinMode(RtcSquareWavePin, INPUT);
 
-  Serial1.begin(9600); //This is the UART, pipes to sensors attached to board
-  Serial1.println("Initialize Serial Hardware UART Pins");
+    //--------RTC SETUP ------------
+    // if you are using ESP-01 then uncomment the line below to reset the pins to
+    // the available pins for SDA, SCL
+    // Wire.begin(0, 2); // due to limited pins, use pin 0 and 2 for SDA, SCL
 
-  // 3. Initialize library
-  loadcell.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-  loadcell.set_scale(LOADCELL_DIVIDER);
-  loadcell.set_offset(LOADCELL_OFFSET);
+    Rtc.Begin();
+
+    RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+
+    if (!Rtc.IsDateTimeValid())
+    {
+        if (Rtc.LastError() != 0)
+        {
+            // we have a communications error
+            // see https://www.arduino.cc/en/Reference/WireEndTransmission for
+            // what the number means
+            Serial.print("RTC communications error = ");
+            Serial.println(Rtc.LastError());
+        }
+        else
+        {
+            Serial.println("RTC lost confidence in the DateTime!");
+            Rtc.SetDateTime(compiled);
+        }
+    }
+
+    if (!Rtc.GetIsRunning())
+    {
+        Serial.println("RTC was not actively running, starting now");
+        Rtc.SetIsRunning(true);
+    }
+
+    RtcDateTime now = Rtc.GetDateTime();
+    if (now < compiled)
+    {
+        Serial.println("RTC is older than compile time!  (Updating DateTime)");
+        Rtc.SetDateTime(compiled);
+    }
+
+    Rtc.Enable32kHzPin(false);
+    Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmOne);
+
+    // Alarm 1 set to trigger every day when
+    // the hours, minutes, and seconds match
+    RtcDateTime alarmTime = now + 18; // into the future
+    DS3231AlarmOne alarm1(
+        alarmTime.Day(),
+        alarmTime.Hour(),
+        alarmTime.Minute(),
+        alarmTime.Second(),
+        DS3231AlarmOneControl_OncePerSecond);
+    // DS3231AlarmOneControl_HoursMinutesSecondsMatch);
+    Rtc.SetAlarmOne(alarm1);
+
+    // Alarm 2 set to trigger at the top of the minute
+    DS3231AlarmTwo alarm2(
+        0,
+        0,
+        0,
+        DS3231AlarmTwoControl_OncePerMinute);
+    Rtc.SetAlarmTwo(alarm2);
+
+    // throw away any old alarm state before we ran
+    Rtc.LatchAlarmsTriggeredFlags();
+
+    // setup external interupt
+    attachInterrupt(RtcSquareWaveInterrupt, InteruptServiceRoutine, FALLING);
 }
 
 void loop()
 {
-  // Serial.println("Hello world!!!");               // Print "Hello World" to the Serial Monitor
-  // Serial1.println("Hello! Can anybody hear me?"); // Print "Hello!" over hardware UART
+    if (!Rtc.IsDateTimeValid())
+    {
+        if (Rtc.LastError() != 0)
+        {
+            // we have a communications error
+            // see https://www.arduino.cc/en/Reference/WireEndTransmission for
+            // what the number means
+            Serial.print("RTC communications error = ");
+            Serial.println(Rtc.LastError());
+        }
+        else
+        {
+            Serial.println("RTC lost confidence in the DateTime!");
+        }
+    }
 
-  // 4. Acquire reading
-  Serial.print("Weight: ");
-  Serial.println(loadcell.get_units(10), 2);
+    if (Alarmed())
+    {
+        digitalWrite(LED, !digitalRead(LED));
 
-  digitalWrite(RXLED, LOW); // set the RX LED ON
-  TXLED0;                   //TX LED is not tied to a normally controlled pin so a macro is needed, turn LED OFF
-  delay(200);               // wait for a second
+        Serial.print(">>Interupt Count: ");
+        Serial.print(interuptCount);
+        Serial.println("<<");
 
-  digitalWrite(RXLED, HIGH); // set the RX LED OFF
-  TXLED1;                    //TX LED macro to turn LED ON
-  delay(200);                // wait for a second
-} */
+        RtcDateTime now = Rtc.GetDateTime();
+
+        printDateTime(now);
+        Serial.println();
+    }
+
+    // pinMode(ledPin, OUTPUT);
+    // delay(200);
+    // digitalWrite(ledPin, HIGH);
+    // delay(500);
+    // digitalWrite(ledPin, LOW);
+    // delay(200);
+    // pinMode(ledPin, INPUT);
+
+    // we only want to show time every 10 seconds
+    // but we want to show responce to the interupt firing
+    // for (int timeCount = 0; timeCount < 20; timeCount++)
+    // {
+    //     if (Alarmed())
+    //     {
+    //         Serial.print(">>Interupt Count: ");
+    //         Serial.print(interuptCount);
+    //         Serial.println("<<");
+    //         digitalWrite(LED, !digitalRead(LED));
+    //     }
+    //     delay(500);
+    // }
+}
+
+bool Alarmed()
+{
+    bool wasAlarmed = false;
+    if (interuptFlag) // check our flag that gets sets in the interupt
+    {
+        wasAlarmed = true;
+        interuptFlag = false; // reset the flag
+
+        // this gives us which alarms triggered and
+        // then allows for others to trigger again
+        DS3231AlarmFlag flag = Rtc.LatchAlarmsTriggeredFlags();
+
+        if (flag & DS3231AlarmFlag_Alarm1)
+        {
+            Serial.println("alarm one triggered");
+        }
+        if (flag & DS3231AlarmFlag_Alarm2)
+        {
+            Serial.println("alarm two triggered");
+        }
+    }
+    return wasAlarmed;
+}
+
+#define countof(a) (sizeof(a) / sizeof(a[0]))
+
+void printDateTime(const RtcDateTime &dt)
+{
+    char datestring[20];
+
+    snprintf_P(datestring,
+               countof(datestring),
+               PSTR("%02u/%02u/%04u %02u:%02u:%02u"),
+               dt.Month(),
+               dt.Day(),
+               dt.Year(),
+               dt.Hour(),
+               dt.Minute(),
+               dt.Second());
+    Serial.print(datestring);
+}
