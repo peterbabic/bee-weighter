@@ -3,14 +3,20 @@
 
 #include <Wire.h>
 #include <RtcDS3231.h>
+#include <HX711.h>
 
 RtcDS3231<TwoWire> Rtc(Wire);
+HX711 scale;
 
 const int rtcPowerPin = 4;
 const int wakeUpPin = 7;
 const int ledPin = 17;
 
-const int secondsTillNextWakeup = 5;
+const int scaleDataPin = 21;
+const int scaleSckPin = 20;
+const int scalePowerPin = 19;
+
+const int secondsTillNextWakeup = 3;
 const long interval = 50;
 
 void wake()
@@ -31,14 +37,24 @@ void sleepNow()
 
 void setup()
 {
+    delay(3000);
+
+    Serial.begin(9660);
+    Serial.println("Initializing.");
+
     pinMode(wakeUpPin, INPUT_PULLUP);
     pinMode(ledPin, OUTPUT);
+    pinMode(scalePowerPin, OUTPUT);
 
     pinMode(rtcPowerPin, OUTPUT);
     digitalWrite(rtcPowerPin, HIGH);
+    digitalWrite(scalePowerPin, HIGH);
 
-    // Serial.begin(9660);
     Rtc.Begin();
+
+    scale.begin(scaleDataPin, scaleSckPin);
+    scale.set_scale(1000.f); // this value is obtained by calibrating the scale with known weights; see the README for details
+    scale.tare();            // reset the scale to 0
 
     RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
 
@@ -49,26 +65,26 @@ void setup()
             // we have a communications error
             // see https://www.arduino.cc/en/Reference/WireEndTransmission for
             // what the number means
-            // Serial.print("RTC communications error = ");
-            // Serial.println(Rtc.LastError());
+            Serial.print("RTC communications error = ");
+            Serial.println(Rtc.LastError());
         }
         else
         {
-            // Serial.println("RTC lost confidence in the DateTime!");
+            Serial.println("RTC lost confidence in the DateTime!");
             Rtc.SetDateTime(compiled);
         }
     }
 
     if (!Rtc.GetIsRunning())
     {
-        // Serial.println("RTC was not actively running, starting now");
+        Serial.println("RTC was not actively running, starting now");
         Rtc.SetIsRunning(true);
     }
 
     RtcDateTime now = Rtc.GetDateTime();
     if (now < compiled)
     {
-        // Serial.println("RTC is older than compile time!  (Updating DateTime)");
+        Serial.println("RTC is older than compile time!  (Updating DateTime)");
         Rtc.SetDateTime(compiled);
     }
 
@@ -79,10 +95,14 @@ void setup()
 void loop()
 {
     pinMode(rtcPowerPin, OUTPUT);
+    pinMode(scalePowerPin, OUTPUT);
+    digitalWrite(scalePowerPin, HIGH);
     digitalWrite(rtcPowerPin, HIGH);
     digitalWrite(ledPin, LOW);
 
     delay(interval);
+
+    scale.power_up();
 
     RtcDateTime now = Rtc.GetDateTime();
     RtcDateTime alarmTime = now + secondsTillNextWakeup;
@@ -96,9 +116,15 @@ void loop()
     Rtc.SetAlarmOne(alarm1);
     Rtc.LatchAlarmsTriggeredFlags();
 
+    Serial.println(scale.get_units(1), 1);
+    Serial.flush();
+    scale.power_down();
+
+    digitalWrite(scalePowerPin, LOW);
     digitalWrite(ledPin, HIGH);
     digitalWrite(rtcPowerPin, LOW);
     pinMode(rtcPowerPin, INPUT);
+    pinMode(scalePowerPin, INPUT);
 
     sleepNow();
 }
