@@ -6,9 +6,12 @@
 
 RtcDS3231<TwoWire> Rtc(Wire);
 
+const int rtcPowerPin = 4;
 const int wakeUpPin = 7;
 const int ledPin = 17;
-const int secondsTillNextWakeup = 6;
+
+const int secondsTillNextWakeup = 5;
+const long interval = 50;
 
 void wake()
 {
@@ -31,7 +34,10 @@ void setup()
     pinMode(wakeUpPin, INPUT_PULLUP);
     pinMode(ledPin, OUTPUT);
 
-    Serial.begin(9660);
+    pinMode(rtcPowerPin, OUTPUT);
+    digitalWrite(rtcPowerPin, HIGH);
+
+    // Serial.begin(9660);
     Rtc.Begin();
 
     RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
@@ -43,26 +49,26 @@ void setup()
             // we have a communications error
             // see https://www.arduino.cc/en/Reference/WireEndTransmission for
             // what the number means
-            Serial.print("RTC communications error = ");
-            Serial.println(Rtc.LastError());
+            // Serial.print("RTC communications error = ");
+            // Serial.println(Rtc.LastError());
         }
         else
         {
-            Serial.println("RTC lost confidence in the DateTime!");
+            // Serial.println("RTC lost confidence in the DateTime!");
             Rtc.SetDateTime(compiled);
         }
     }
 
     if (!Rtc.GetIsRunning())
     {
-        Serial.println("RTC was not actively running, starting now");
+        // Serial.println("RTC was not actively running, starting now");
         Rtc.SetIsRunning(true);
     }
 
     RtcDateTime now = Rtc.GetDateTime();
     if (now < compiled)
     {
-        Serial.println("RTC is older than compile time!  (Updating DateTime)");
+        // Serial.println("RTC is older than compile time!  (Updating DateTime)");
         Rtc.SetDateTime(compiled);
     }
 
@@ -72,12 +78,11 @@ void setup()
 
 void loop()
 {
-    for (byte i = 0; i <= 5; i++)
-    {
-        digitalWrite(ledPin, !digitalRead(ledPin));
-        delay(50);
-    }
+    pinMode(rtcPowerPin, OUTPUT);
+    digitalWrite(rtcPowerPin, HIGH);
+    digitalWrite(ledPin, LOW);
 
+    delay(interval);
 
     RtcDateTime now = Rtc.GetDateTime();
     RtcDateTime alarmTime = now + secondsTillNextWakeup;
@@ -87,12 +92,13 @@ void loop()
         alarmTime.Minute(),
         alarmTime.Second(),
         DS3231AlarmOneControl_HoursMinutesSecondsMatch);
-    Rtc.SetAlarmOne(alarm1);
 
+    Rtc.SetAlarmOne(alarm1);
     Rtc.LatchAlarmsTriggeredFlags();
 
-
-
+    digitalWrite(ledPin, HIGH);
+    digitalWrite(rtcPowerPin, LOW);
+    pinMode(rtcPowerPin, INPUT);
 
     sleepNow();
 }
