@@ -116,7 +116,15 @@ void loop()
     Rtc.SetAlarmOne(alarm1);
     Rtc.LatchAlarmsTriggeredFlags();
 
-    Serial.println(scale.get_units(1), 1);
+    RtcTemperature temp = Rtc.GetTemperature();
+
+    String buffer;
+    buffer += String(scale.get_units(1), 2);
+    buffer += F(" kg, ");
+    buffer += String(temp.AsFloatDegC(), 2);
+    buffer += F(" °C");
+    Serial.println(buffer);
+
     Serial.flush();
     scale.power_down();
 
