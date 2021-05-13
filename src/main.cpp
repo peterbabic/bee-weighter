@@ -6,11 +6,13 @@
 #include <HX711.h>
 #include <EepromAT24C32.h>
 
+#define countof(a) (sizeof(a) / sizeof(a[0]))
+
 RtcDS3231<TwoWire> Rtc(Wire);
-EepromAt24c32<TwoWire> RtcEeprom(Wire);HX711 scale;
+EepromAt24c32<TwoWire> RtcEeprom(Wire);
+HX711 scale;
 
 // void printDateTime(const RtcDateTime &dt);
-
 
 const int rtcPowerPin = 4;
 const int wakeUpPin = 7;
@@ -125,8 +127,6 @@ void loop()
     Rtc.SetAlarmOne(alarm1);
     Rtc.LatchAlarmsTriggeredFlags();
 
-    RtcTemperature temp = Rtc.GetTemperature();
-
     int lastA = -1;
     int lastB = -1;
 
@@ -174,26 +174,19 @@ void loop()
 
     head = (head + 1) % pageCount;
 
-    // Serial.print("Last a: ");
-    // Serial.print(lastA);
-    // Serial.print(", Last b: ");
-    // Serial.print(lastB);
-    // Serial.print(", HEAD: ");
-    // Serial.print(head);
-    // Serial.print(", next: ");
-    // Serial.println((char)next);
+    char memString[pageSize + 1];
+    int16_t weight = scale.get_units(1) * 100.00f;
 
-    String buffer;
-    buffer += String((char)next);
-    buffer += String(scale.get_units(1), 2);
-    buffer += F(" kg, ");
-    buffer += String(temp.AsFloatDegC(), 2);
-    buffer += F(" °C");
-    // Serial.println(buffer);
-    char data[pageSize];
-    buffer.toCharArray(data, pageSize);
+    // b674250562+12744
+    snprintf_P(memString,
+               countof(memString),
+               PSTR("%c%ld%+6d"),
+               next,
+               now.TotalSeconds(),
+               weight);
+    // Serial.println(memString);
 
-    RtcEeprom.SetMemory(head * pageSize, (const uint8_t *)data, sizeof(data) - 1);
+    RtcEeprom.SetMemory(head * pageSize, (const uint8_t *)memString, sizeof(memString) - 1);
 
     for (int i = 0; i <= pageCount; i++)
     {
@@ -222,6 +215,3 @@ void loop()
 
     sleepNow();
 }
-
-
-/
