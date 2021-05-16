@@ -101,6 +101,13 @@ void setup()
 
     Rtc.Enable32kHzPin(false);
     Rtc.SetSquareWavePin(DS3231SquareWavePin_ModeAlarmOne);
+
+    // const char data[] = "0               ";
+    // for (int i = 0; i <= pageCount; i++)
+    // {
+    //     RtcEeprom.SetMemory(i * pageSize, (const uint8_t *)data, sizeof(data) - 1); // remove the null terminator strings add
+    //     Serial.print('.');
+    // }
 }
 
 void loop()
@@ -127,66 +134,56 @@ void loop()
     Rtc.SetAlarmOne(alarm1);
     Rtc.LatchAlarmsTriggeredFlags();
 
-    int lastA = -1;
-    int lastB = -1;
+    uint16_t highest = 0;
+    uint32_t highestEpoch = 0;
+    uint8_t epochBuff[40];
 
     for (int i = 0; i <= pageCount; i++)
     {
-        uint8_t x = RtcEeprom.GetMemory(i * pageSize);
+        uint16_t epochGotten = RtcEeprom.GetMemory(i * pageSize, epochBuff, 10);
+        uint32_t epoch = strtol((const char *)epochBuff, NULL, 0);
 
-        if ((char)x == 'a')
+        if (epoch > highestEpoch)
         {
-            lastA = i;
+            highest = i;
+            highestEpoch = epoch;
         }
 
-        if ((char)x == 'b')
-        {
-            lastB = i;
-        }
+        // Serial.print("gotten: ");
+        // Serial.print(epochGotten);
+        // Serial.print(", buff: ");
+        // for (uint8_t ch = 0; ch < epochGotten; ch++)
+        // {
+        //     Serial.print((char)epochBuff[ch]);
+        // }
+        // Serial.print(", i: ");
+        // Serial.print(i);
+        // Serial.print(", epoch: ");
+        // Serial.println(epoch);
     }
-
-    int head = -1;
-    uint8_t next = 'c';
-
-    if (lastA == pageCount)
-    {
-        head = pageCount;
-        next = 'b';
-    }
-
-    if (lastB == pageCount)
-    {
-        head = pageCount;
-        next = 'a';
-    }
-
-    if (lastA > lastB)
-    {
-        head = lastB;
-        next = 'b';
-    }
-
-    if (lastB > lastA)
-    {
-        head = lastA;
-        next = 'a';
-    }
-
-    head = (head + 1) % pageCount;
 
     char memString[pageSize + 1];
     int16_t weight = scale.get_units(1) * 100.00f;
-
     // b674250562+12744
     snprintf_P(memString,
                countof(memString),
-               PSTR("%c%ld%+6d"),
-               next,
+               PSTR("%10ld%+6d"),
                now.TotalSeconds(),
                weight);
-    // Serial.println(memString);
+    Serial.print("[");
+    Serial.print(memString);
+    Serial.println("]");
 
-    RtcEeprom.SetMemory(head * pageSize, (const uint8_t *)memString, sizeof(memString) - 1);
+    uint16_t head = (highest + 1) % (pageCount + 1);
+
+    Serial.print("Highest found is at position ");
+    Serial.print(highest);
+    Serial.print(" having an epoch ");
+    Serial.println(highestEpoch);
+    Serial.print("Head is now at ");
+    Serial.println(head);
+
+    RtcEeprom.SetMemory(head * pageSize, (const uint8_t *)memString, pageSize);
 
     for (int i = 0; i <= pageCount; i++)
     {
