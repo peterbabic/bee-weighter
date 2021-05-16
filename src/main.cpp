@@ -12,8 +12,6 @@ RtcDS3231<TwoWire> Rtc(Wire);
 EepromAt24c32<TwoWire> RtcEeprom(Wire);
 HX711 scale;
 
-// void printDateTime(const RtcDateTime &dt);
-
 const int rtcPowerPin = 4;
 const int wakeUpPin = 7;
 const int ledPin = 17;
@@ -65,8 +63,8 @@ void setup()
     RtcEeprom.Begin();
 
     scale.begin(scaleDataPin, scaleSckPin);
-    scale.set_scale(1000.f); // this value is obtained by calibrating the scale with known weights; see the README for details
-    scale.tare();            // reset the scale to 0
+    scale.set_scale(1000.f); 
+    scale.tare();            
 
     RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
 
@@ -74,9 +72,6 @@ void setup()
     {
         if (Rtc.LastError() != 0)
         {
-            // we have a communications error
-            // see https://www.arduino.cc/en/Reference/WireEndTransmission for
-            // what the number means
             Serial.print("RTC communications error = ");
             Serial.println(Rtc.LastError());
         }
@@ -115,11 +110,6 @@ void setup()
     {
         uint8_t buff[pageSize + 1];
         uint8_t gotten = RtcEeprom.GetMemory(i * pageSize, buff, pageSize);
-        // Serial.print(i);
-        // Serial.print(":\t");
-        // Serial.print("data read (");
-        // Serial.print(gotten);
-        // Serial.print(") = \"");
         for (uint8_t ch = 0; ch < gotten; ch++)
         {
             Serial.print((char)buff[ch]);
@@ -166,57 +156,14 @@ void loop()
             highest = i;
             highestEpoch = epoch;
         }
-
-        // Serial.print("gotten: ");
-        // Serial.print(epochGotten);
-        // Serial.print(", buff: ");
-        // for (uint8_t ch = 0; ch < epochGotten; ch++)
-        // {
-        //     Serial.print((char)epochBuff[ch]);
-        // }
-        // Serial.print(", i: ");
-        // Serial.print(i);
-        // Serial.print(", epoch: ");
-        // Serial.println(epoch);
     }
 
     char memString[pageSize + 1];
     int16_t weight = scale.get_units(1) * 100.00f;
-    // b674250562+12744
-    snprintf_P(memString,
-               countof(memString),
-               PSTR("%10ld%+6d"),
-               now.TotalSeconds(),
-               weight);
-    // Serial.print("[");
-    // Serial.print(memString);
-    // Serial.println("]");
+    snprintf_P(memString, countof(memString), PSTR("%10ld%+6d"), now.TotalSeconds(), weight);
 
     uint16_t head = (highest + 1) % (pageCount + 1);
     RtcEeprom.SetMemory(head * pageSize, (const uint8_t *)memString, pageSize);
-
-    // Serial.print("Highest found is at position ");
-    // Serial.print(highest);
-    // Serial.print(" having an epoch ");
-    // Serial.println(highestEpoch);
-    // Serial.print("Head is now at ");
-    // Serial.println(head);
-
-    // for (int i = 0; i <= pageCount; i++)
-    // {
-    //     uint8_t buff[pageSize + 1];
-    //     uint8_t gotten = RtcEeprom.GetMemory(i * pageSize, buff, pageSize);
-    //     Serial.print(i);
-    //     Serial.print(":\t");
-    //     Serial.print("data read (");
-    //     Serial.print(gotten);
-    //     Serial.print(") = \"");
-    //     for (uint8_t ch = 0; ch < gotten; ch++)
-    //     {
-    //         Serial.print((char)buff[ch]);
-    //     }
-    //     Serial.println("\"");
-    // }
 
     Serial.flush();
     scale.power_down();
