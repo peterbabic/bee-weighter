@@ -12,6 +12,8 @@ RtcDS3231<TwoWire> Rtc(Wire);
 EepromAt24c32<TwoWire> RtcEeprom(Wire);
 HX711 scale;
 
+const float COEFF = 0.2157f;
+
 const int rtcPowerPin = 4;
 const int wakeUpPin = 7;
 const int ledPin = 17;
@@ -20,7 +22,7 @@ const int scaleDataPin = 21;
 const int scaleSckPin = 20;
 const int scalePowerPin = 19;
 
-const int secondsTillNextWakeup = 3;
+const int secondsTillNextWakeup = 21600;
 const long interval = 50;
 
 const int memTotal = 4096;
@@ -45,10 +47,9 @@ void sleepNow()
 
 void setup()
 {
-    delay(3000);
+    delay(15000);
 
     Serial.begin(9660);
-    Serial.println("Initializing.");
     Serial.println();
 
     pinMode(wakeUpPin, INPUT_PULLUP);
@@ -105,7 +106,6 @@ void setup()
     //     Serial.print('.');
     // }
 
-    Serial.println("Seconds since 01/01/2000 | Weight in dkg");
     for (int i = 0; i <= pageCount; i++)
     {
         uint8_t buff[pageSize + 1];
@@ -116,6 +116,8 @@ void setup()
         }
         Serial.println();
     }
+
+    delay(15000);
 }
 
 void loop()
@@ -159,11 +161,13 @@ void loop()
     }
 
     char memString[pageSize + 1];
-    int16_t weight = scale.get_units(1) * 100.00f;
-    snprintf_P(memString, countof(memString), PSTR("%10ld%+6d"), now.TotalSeconds(), weight);
+    int16_t weight = scale.get_units(1) / COEFF;
+    snprintf_P(memString, countof(memString), PSTR("%10ld%6d"), now.TotalSeconds(), weight);
 
     uint16_t head = (highest + 1) % (pageCount + 1);
     RtcEeprom.SetMemory(head * pageSize, (const uint8_t *)memString, pageSize);
+
+    // Serial.println(memString);
 
     Serial.flush();
     scale.power_down();
