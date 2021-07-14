@@ -1,0 +1,47 @@
+#include <Arduino.h>
+#include <avr/sleep.h>
+
+const int wakeUpPin = 7;
+const int ledPin = 17;
+
+void wake()
+{
+    sleep_disable();
+    detachInterrupt(digitalPinToInterrupt(wakeUpPin));
+}
+
+void sleepNow()
+{
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+    noInterrupts();
+    sleep_enable();
+    attachInterrupt(digitalPinToInterrupt(wakeUpPin), wake, LOW);
+    interrupts();
+    sleep_cpu();
+}
+
+void setup()
+{
+    pinMode(wakeUpPin, INPUT_PULLUP);
+    pinMode(ledPin, OUTPUT);
+}
+
+void loop()
+{
+    // Do something here
+    // Example: Read sensor, data logging, data transmission.
+    for (byte i = 0; i <= 6; i++)
+    {
+        digitalWrite(ledPin, !digitalRead(ledPin));
+        delay(50);
+    }
+
+    for (byte i = 0; i <= 2; i++)
+    {
+        digitalWrite(ledPin, !digitalRead(ledPin));
+        delay(300);
+    }
+
+    // Now go to sleep
+    sleepNow();
+}
