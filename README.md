@@ -40,7 +40,3 @@ Load the code into the Arduino Pro Micro 3.3V:
 ```
 pio run -t upload
 ```
-
-## License
-
-MIT
